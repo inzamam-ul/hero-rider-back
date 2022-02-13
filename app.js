@@ -1,80 +1,69 @@
 const express = require("express");
-const { MongoClient } = require("mongodb");
-const cors = require("cors");
 const bodyParser = require("body-parser");
-// const ObjectId = require("mongodb").ObjectID;
+const cors = require("cors");
 require("dotenv").config();
-
 const app = express();
+const { MongoClient, ObjectId } = require("mongodb");
+const { promises } = require("stream");
+const http = require("http");
+const server = http.createServer(app);
+const io = require("socket.io")(server, {
+  cors: {
+    origin: "*",
+  },
+});
+
+const port = 4000;
 app.use(bodyParser.json());
 app.use(cors());
 
-const port = process.env.PORT || 5050;
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.gbf8e.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`;
-
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.z2baq.mongodb.net/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
+  connectTimeoutMS: 30000,
+  keepAlive: 1,
 });
+
 client.connect((err) => {
-  console.log(err);
-  const collection = client.db("AshaIT").collection("services");
-  // console.log(collection);
-  app.get("/services", (req, res) => {
-    collection.find({}).toArray((err, service) => {
-      res.send(service);
+  if (!err) console.log("connected");
+
+  const UserCollection = client.db("LicenseSoftware").collection("userData");
+  const logsCollection = client.db("LicenseSoftware").collection("logs");
+  app.get("/logs", (req, res) => {
+    logsCollection.find({}).toArray((err, documents) => {
+      res.json(documents);
     });
   });
-  // client.close();
+  const getCollectionSize = (collection) => {
+    collection
+      .stats()
+      .then((count_documents) => {
+        const size = count_documents.totalSize / 1024;
+        const mb = size / 1024;
+        if (size > 0.5) {
+          console.log("download");
+        }
+      })
+      .catch((err) => {
+        console.log(err.Message);
+      });
+  };
+  getCollectionSize(logsCollection);
+
+  io.on("connection", (socket) => {
+    console.log("New client connected " + socket.id);
+    socket.on("send_log", (data) => {
+      logsCollection.insertOne(data).then((res) => {
+        if (res) {
+          io.emit("log", data);
+        }
+      });
+    });
+  });
+  app.get("/", (req, res) => {
+    res.send("Hello World!");
+  });
 });
 
-// client.connect((err) => {
-//   console.log(uri);
-//   const userCollection = client.db("AshaIT").collection("users");
-//   // const adminCollection = client.db("heroRider").collection("admin");
-//   const adminCollection = client.db("AshaIT").collection("admins");
-//   const serviceCollection = client.db("AshaIT").collection("services");
-
-//   app.post("/addUser", (req, res) => {
-//     const newUser = req.body;
-//     console.log(newUser);
-//     userCollection.insertOne(newUser).then((result) => {
-//       res.send(result.insertedCount > 0);
-//     });
-//   });
-//   app.get("/services", (req, res) => {
-//     // serviceCollection.find({}).toArray((err, service) => {
-//     //   res.send(service);
-//     // });
-//     res.send("hello");
-//   });
-
-//   app.post("/addAdmin", (req, res) => {
-//     const newAdmin = req.body;
-//     adminCollection.insertOne(newAdmin).then((result) => {
-//       res.send(result.insertedCount > 0);
-//     });
-//   });
-
-//   app.get("/isAdmin/:email", (req, res) => {
-//     adminCollection.find({ email: req.params.email }).toArray((err, docs) => {
-//       res.send(docs.length > 0);
-//       console.log(docs);
-//     });
-//   });
-
-//   app.get("/getUser", (req, res) => {
-//     console.log("request is comming");
-//     userCollection.find().then((result) => {
-//       res.send(result);
-//     });
-//   });
-// });
-
-app.get("/", (req, res) => {
-  res.send("Hero Rider Server Is Running!");
-});
-
-app.listen(port, () => {
-  console.log(`${port}`);
-});
+server.listen(process.env.PORT || port);
