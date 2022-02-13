@@ -65,5 +65,8 @@ client.connect((err) => {
     res.send("Hello World!");
   });
 });
+app.get("/", (req, res) => {
+  res.send("Hello World!");
+});
 
 server.listen(process.env.PORT || port);
